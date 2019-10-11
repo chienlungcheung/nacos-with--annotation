@@ -210,9 +210,15 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return update(candidate);
     }
 
+    /**
+     * 获取自身节点相关信息
+     * @return
+     */
     public RaftPeer local() {
         RaftPeer peer = peers.get(NetUtils.localServer());
+        // 仅 Stand alone 模式下可允许 peers 里面无自身节点，此时构造一个并添加到其中
         if (peer == null && SystemUtils.STANDALONE_MODE) {
+            // RaftPeer 即 raft 共识算法集群中的一个节点
             RaftPeer localPeer = new RaftPeer();
             localPeer.ip = NetUtils.localServer();
             localPeer.term.set(localTerm.get());
@@ -231,6 +237,10 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return peers.get(server);
     }
 
+    /**
+     * 基于当前集群的大小来计算最小的“大多数”
+     * @return
+     */
     public int majorityCount() {
         return peers.size() / 2 + 1;
     }

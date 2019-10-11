@@ -152,8 +152,16 @@ public class RaftCore {
         return listeners;
     }
 
+    /**
+     * 将 {@code <key, value>} 发布到集群
+     *
+     * @param key
+     * @param value
+     * @throws Exception
+     */
     public void signalPublish(String key, Record value) throws Exception {
 
+        // 如果当前节点非 leader，则组装好数据后借助 raftProxy 将写请求发送给 leader，然后由 leader 发布到整个集群
         if (!isLeader()) {
             JSONObject params = new JSONObject();
             params.put("key", key);
@@ -161,11 +169,13 @@ public class RaftCore {
             Map<String, String> parameters = new HashMap<>(1);
             parameters.put("key", key);
 
+            // 获取当前 leader 地址，然后组装 POST 请求发送给它
             raftProxy.proxyPostLarge(getLeader().ip, API_PUB, params.toJSONString(), parameters);
             return;
         }
 
         try {
+            // 确保写操作串行进行
             OPERATE_LOCK.lock();
             long start = System.currentTimeMillis();
             final Datum datum = new Datum();
@@ -181,20 +191,27 @@ public class RaftCore {
             json.put("datum", datum);
             json.put("source", peers.local());
 
+            // 先写到本地节点（即自身）
             onPublish(datum, peers.local());
 
             final String content = JSON.toJSONString(json);
 
+            // 写到其它节点，总写入个数要占到集群大多数
             final CountDownLatch latch = new CountDownLatch(peers.majorityCount());
+            // 遍历集群全部节点
             for (final String server : peers.allServersIncludeMyself()) {
+                // 如果遇到 leader 节点，则不用再写入了；因为进入循环之前已经调用 onPublish 写入过 leader 了。
                 if (isLeader(server)) {
                     latch.countDown();
                     continue;
                 }
+                // 注意这里用的 API 接口与上面向 leader 发送的不同
                 final String url = buildURL(server, API_ON_PUB);
+                // 发送异步的 POST 请求到相应节点
                 HttpClient.asyncHttpPostLarge(url, Arrays.asList("key=" + key), content, new AsyncCompletionHandler<Integer>() {
                     @Override
                     public Integer onCompleted(Response response) throws Exception {
+                        // 如果写入节点失败，则不计数
                         if (response.getStatusCode() != HttpURLConnection.HTTP_OK) {
                             Loggers.RAFT.warn("[RAFT] failed to publish data to peer, datumId={}, peer={}, http code={}",
                                 datum.key, server, response.getStatusCode());
@@ -212,6 +229,7 @@ public class RaftCore {
 
             }
 
+            // 如果超时且没有实现大多数节点写入成功，则本次发布失败
             if (!latch.await(UtilsAndCommons.RAFT_PUBLISH_TIMEOUT, TimeUnit.MILLISECONDS)) {
                 // only majority servers return success can we consider this update success
                 Loggers.RAFT.error("data publish failed, caused failed to notify majority, key={}", key);
@@ -270,6 +288,13 @@ public class RaftCore {
         }
     }
 
+    /**
+     * 用 source 将 datum 发布到集群中
+     *
+     * @param datum 待发布数据
+     * @param source 集群当前 leader
+     * @throws Exception
+     */
     public void onPublish(Datum datum, RaftPeer source) throws Exception {
         RaftPeer local = peers.local();
         if (datum.value == null) {
@@ -277,6 +302,7 @@ public class RaftCore {
             throw new IllegalStateException("received empty datum");
         }
 
+        // source 必须是 leader，只有 leader 才有资格将数据发布到集群
         if (!peers.isLeader(source.ip)) {
             Loggers.RAFT.warn("peer {} tried to publish data but wasn't leader, leader: {}",
                 JSON.toJSONString(source), JSON.toJSONString(getLeader()));
@@ -284,6 +310,7 @@ public class RaftCore {
                 "data but wasn't leader");
         }
 
+        // 如果 leader 的任期小于本地节点的任期，则说明在这之前应该又发生了 leader 选举，本次数据发布失败
         if (source.term.get() < local.term.get()) {
             Loggers.RAFT.warn("out of date publish, pub-term: {}, cur-term: {}",
                 JSON.toJSONString(source), JSON.toJSONString(local));
@@ -291,8 +318,10 @@ public class RaftCore {
                 + source.term.get() + ", cur-term: " + local.term.get());
         }
 
+        // 重置本地节点的选举超时
         local.resetLeaderDue();
 
+        // 如果本次要写入的数据不是临时的而是要持久化的，则写入磁盘。
         // if data should be persistent, usually this is always true:
         if (KeyBuilder.matchPersistentKey(datum.key)) {
             raftStore.write(datum);
@@ -300,9 +329,11 @@ public class RaftCore {
 
         datums.put(datum.key, datum);
 
+        // 如果本地节点为集群当前 leader，则增加其对应的任期值
         if (isLeader()) {
             local.term.addAndGet(PUBLISH_TERM_INCREASE_COUNT);
         } else {
+            // 如果本地节点不是 leader，则检查下
             if (local.term.get() + PUBLISH_TERM_INCREASE_COUNT > source.term.get()) {
                 //set leader term:
                 getLeader().term.set(source.term.get());

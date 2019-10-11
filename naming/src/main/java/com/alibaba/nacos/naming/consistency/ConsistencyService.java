@@ -27,6 +27,8 @@ import com.alibaba.nacos.naming.pojo.Record;
  * In this way, we also provide space for user to extend the underlying consistency protocols, as long as they
  * obey our consistency baseline.
  *
+ * 与实现无关的一致性服务接口，将一致性协议实现与业务逻辑解耦，用户也可以自己定义一套一致性协议然后提供这里要求的接口。
+ *
  * @author nkorange
  * @since 1.0.0
  */
@@ -34,6 +36,8 @@ public interface ConsistencyService {
 
     /**
      * Put a data related to a key to Nacos cluster
+     * <p>
+     * 将一对 {@code <key, value>} 写入 Nacos 集群
      *
      * @param key   key of data, this key should be globally unique
      * @param value value of data
@@ -44,6 +48,8 @@ public interface ConsistencyService {
 
     /**
      * Remove a data from Nacos cluster
+     * <p>
+     * 根据 {@code key} 从 Nacos 集群移除相关数据
      *
      * @param key key of data
      * @throws NacosException
@@ -52,6 +58,8 @@ public interface ConsistencyService {
 
     /**
      * Get a data from Nacos cluster
+     * <p>
+     * 根据 {@code key} 从 Nacos 集群查询相关数据
      *
      * @param key key of data
      * @return data related to the key
@@ -61,6 +69,8 @@ public interface ConsistencyService {
 
     /**
      * Listen for changes of a data
+     * <p>
+     * 为与 {@code key} 对应的数据新增一个监听器，以监听 Nacos 集群中相关数据的变化
      *
      * @param key      key of data
      * @param listener callback of data change
@@ -70,6 +80,8 @@ public interface ConsistencyService {
 
     /**
      * Cancel listening of a data
+     * <p>
+     * 从与 {@code key} 对应的数据的监听器列表中移除指定的监听器
      *
      * @param key      key of data
      * @param listener callback of data change
@@ -79,6 +91,8 @@ public interface ConsistencyService {
 
     /**
      * Tell the status of this consistency service
+     * <p>
+     * 检查该一致性服务是否可用
      *
      * @return true if available
      */

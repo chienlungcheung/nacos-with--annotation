@@ -39,6 +39,9 @@ public class RaftPeer {
 
     public State state = State.FOLLOWER;
 
+    /**
+     * 重置选举超时（见 raft 协议 election-timeout）
+     */
     public void resetLeaderDue() {
         leaderDueMs = GlobalExecutor.LEADER_TIMEOUT_MS + RandomUtils.nextLong(0, GlobalExecutor.RANDOM_MS);
     }

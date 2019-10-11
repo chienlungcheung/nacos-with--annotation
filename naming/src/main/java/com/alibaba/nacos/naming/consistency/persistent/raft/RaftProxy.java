@@ -69,6 +69,14 @@ public class RaftProxy {
         }
     }
 
+    /**
+     * 转发 POST 请求
+     * @param server 目标机器的 IP[:port]
+     * @param api restful api，URL path 的一部分，与 server 一起组装成目标 URL
+     * @param content POST body
+     * @param headers POST headers
+     * @throws Exception
+     */
     public void proxyPostLarge(String server, String api, String content, Map<String, String> headers) throws Exception {
         // do proxy
         if (!server.contains(UtilsAndCommons.IP_PORT_SPLITER)) {
