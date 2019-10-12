@@ -124,6 +124,7 @@ public class GlobalExecutor {
     }
 
     public static void registerMasterElection(Runnable runnable) {
+        // 每隔 500ms 执行一次选举
         executorService.scheduleAtFixedRate(runnable, 0, TICK_PERIOD_MS, TimeUnit.MILLISECONDS);
     }
 

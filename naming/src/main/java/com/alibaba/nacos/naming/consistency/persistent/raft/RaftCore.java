@@ -161,7 +161,16 @@ public class RaftCore {
      */
     public void signalPublish(String key, Record value) throws Exception {
 
-        // 如果当前节点非 leader，则组装好数据后借助 raftProxy 将写请求发送给 leader，然后由 leader 发布到整个集群
+        // 如果当前节点非 leader，则组装好数据后借助 raftProxy 将写请求发送给 leader，然后由 leader 发布到整个集群。
+        // 这里跟 raft 论文有出入，原文是这样的：
+        // Clients of Raft send all of their requests to the leader.
+        // When a client first starts up, it connects to a randomly-
+        // chosen server. If the client’s first choice is not the leader,
+        // that server will reject the client’s request and supply in-
+        // formation about the most recent leader it has heard from
+        // (AppendEntries requests include the network address of
+        // the leader). If the leader crashes, client requests will time
+        // out; clients then try again with randomly-chosenservers.
         if (!isLeader()) {
             JSONObject params = new JSONObject();
             params.put("key", key);
@@ -184,6 +193,7 @@ public class RaftCore {
             if (getDatum(key) == null) {
                 datum.timestamp.set(1L);
             } else {
+                // 如果 key 已经存在于集群中了，则在原基础上递增时间戳，用以标识数据更新
                 datum.timestamp.set(getDatum(key).timestamp.incrementAndGet());
             }
 
@@ -191,7 +201,7 @@ public class RaftCore {
             json.put("datum", datum);
             json.put("source", peers.local());
 
-            // 先写到本地节点（即自身）
+            // 先写到本地节点（此时本地节点即 leader）
             onPublish(datum, peers.local());
 
             final String content = JSON.toJSONString(json);
@@ -289,7 +299,7 @@ public class RaftCore {
     }
 
     /**
-     * 用 source 将 datum 发布到集群中
+     * 用 source （必须是当前 leader）将 datum 发布到集群中
      *
      * @param datum 待发布数据
      * @param source 集群当前 leader
@@ -327,21 +337,26 @@ public class RaftCore {
             raftStore.write(datum);
         }
 
+        // 数据临时存放地（内存中）
         datums.put(datum.key, datum);
 
         // 如果本地节点为集群当前 leader，则增加其对应的任期值
         if (isLeader()) {
             local.term.addAndGet(PUBLISH_TERM_INCREASE_COUNT);
         } else {
-            // 如果本地节点不是 leader，则检查下
+            // 本地节点不是 leader
+            //
+            // 如果本地节点任期增长后大于 source 的当前任期值
             if (local.term.get() + PUBLISH_TERM_INCREASE_COUNT > source.term.get()) {
                 //set leader term:
                 getLeader().term.set(source.term.get());
                 local.term.set(getLeader().term.get());
             } else {
+                // 否则直接递增本地节点任期值
                 local.term.addAndGet(PUBLISH_TERM_INCREASE_COUNT);
             }
         }
+        // 将本地节点新的任期值持久化到磁盘中的 meta.properties 文件中
         raftStore.updateTerm(local.term.get());
 
         notifier.addTask(datum.key, ApplyAction.CHANGE);
@@ -937,6 +952,9 @@ public class RaftCore {
         return notifier.getTaskSize();
     }
 
+    /**
+     * 负责监听数据变化，然后调用注册到对应数据上的监听器
+     */
     public class Notifier implements Runnable {
 
         private ConcurrentHashMap<String, String> services = new ConcurrentHashMap<>(10 * 1024);

@@ -57,8 +57,14 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
 
     private AtomicLong localTerm = new AtomicLong(0L);
 
+    /**
+     * 保存集群当前的 leader，可能是自己。
+     */
     private RaftPeer leader = null;
 
+    /**
+     * 保存集群全部节点
+     */
     private Map<String, RaftPeer> peers = new HashMap<>();
 
     private Set<String> sites = new HashSet<>();
@@ -80,6 +86,10 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         serverListManager.listen(this);
     }
 
+    /**
+     * 获取集群当前 leader；若为 Stand alone 模式，则返回自身。
+     * @return
+     */
     public RaftPeer getLeader() {
         if (STANDALONE_MODE) {
             return local();
@@ -95,17 +105,34 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return ready;
     }
 
+    /**
+     * 移除指定的节点
+     *
+     * @param servers
+     */
     public void remove(List<String> servers) {
         for (String server : servers) {
             peers.remove(server);
         }
     }
 
+    /**
+     * 更新指定的节点
+     *
+     * @param peer
+     * @return
+     */
     public RaftPeer update(RaftPeer peer) {
         peers.put(peer.ip, peer);
         return peer;
     }
 
+    /**
+     * 若为集群模式，则通过比较 leader 的 ip 与自身 ip 判断自身是否为 leader；
+     * 若为 Stand alone 模式，则认为自身节点为 leader。
+     * @param ip
+     * @return
+     */
     public boolean isLeader(String ip) {
         if (STANDALONE_MODE) {
             return true;
@@ -216,7 +243,7 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
      */
     public RaftPeer local() {
         RaftPeer peer = peers.get(NetUtils.localServer());
-        // 仅 Stand alone 模式下可允许 peers 里面无自身节点，此时构造一个并添加到其中
+        // 仅 Stand alone 模式下可允许 peers 里面无自身节点，此时构造一个并添加到其中并返回之
         if (peer == null && SystemUtils.STANDALONE_MODE) {
             // RaftPeer 即 raft 共识算法集群中的一个节点
             RaftPeer localPeer = new RaftPeer();
@@ -233,12 +260,19 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return peer;
     }
 
+    /**
+     * 根据服务器获取对应的节点
+     *
+     * @param server
+     * @return
+     */
     public RaftPeer get(String server) {
         return peers.get(server);
     }
 
     /**
      * 基于当前集群的大小来计算最小的“大多数”
+     *
      * @return
      */
     public int majorityCount() {

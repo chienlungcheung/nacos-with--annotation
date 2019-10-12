@@ -23,20 +23,37 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
+ * 基于 raft 算法实现的集群中的一个节点
+ *
  * @author nacos
  */
 public class RaftPeer {
 
     public String ip;
 
+    /**
+     * votedFor: candidateId that received vote in current term (or null if none)
+     */
     public String voteFor;
 
+    /**
+     * currentTerm: latest term server has seen (initialized to 0 on first boot, increases monotonically)
+     */
     public AtomicLong term = new AtomicLong(0L);
 
+    /**
+     * 选举超时
+     */
     public volatile long leaderDueMs = RandomUtils.nextLong(0, GlobalExecutor.LEADER_TIMEOUT_MS);
 
+    /**
+     * 心跳超时
+     */
     public volatile long heartbeatDueMs = RandomUtils.nextLong(0, GlobalExecutor.HEARTBEAT_INTERVAL_MS);
 
+    /**
+     * 节点状态，初始为 FOLLOWER
+     */
     public State state = State.FOLLOWER;
 
     /**
@@ -46,10 +63,16 @@ public class RaftPeer {
         leaderDueMs = GlobalExecutor.LEADER_TIMEOUT_MS + RandomUtils.nextLong(0, GlobalExecutor.RANDOM_MS);
     }
 
+    /**
+     * 重置心跳超时
+     */
     public void resetHeartbeatDue() {
         heartbeatDueMs = GlobalExecutor.HEARTBEAT_INTERVAL_MS;
     }
 
+    /**
+     * 每个节点三个可能的状态
+     */
     public enum State {
         /**
          * Leader of the cluster, only one leader stands in a cluster
@@ -70,6 +93,11 @@ public class RaftPeer {
         return Objects.hash(ip);
     }
 
+    /**
+     * 仅当两个节点的 IP 相同就视为同一个节点
+     * @param obj
+     * @return
+     */
     @Override
     public boolean equals(Object obj) {
         if (obj == null) {
