@@ -102,15 +102,33 @@ public class KeyBuilder {
         return BRIEF_INSTANCE_LIST_KEY_PREFIX + key.split(INSTANCE_LIST_KEY_PREFIX)[1];
     }
 
+    /**
+     * 把 key 截短，只要后面的部分
+     *
+     * @param key
+     * @return
+     */
     public static String briefServiceMetaKey(String key) {
         return BRIEF_SERVICE_META_KEY_PREFIX + key.split(SERVICE_META_KEY_PREFIX)[1];
     }
 
+    /**
+     * 将 {@code key} 恢复到长格式。
+     *
+     * @param key
+     * @return
+     */
     public static String detailInstanceListkey(String key) {
         return INSTANCE_LIST_KEY_PREFIX.substring(0, INSTANCE_LIST_KEY_PREFIX.indexOf(BRIEF_INSTANCE_LIST_KEY_PREFIX))
             + key;
     }
 
+    /**
+     * 将 {@code key} 恢复到长格式。
+     *
+     * @param key
+     * @return
+     */
     public static String detailServiceMetaKey(String key) {
         return SERVICE_META_KEY_PREFIX.substring(0, SERVICE_META_KEY_PREFIX.indexOf(BRIEF_SERVICE_META_KEY_PREFIX))
             + key;

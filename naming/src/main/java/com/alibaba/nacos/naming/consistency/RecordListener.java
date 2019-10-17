@@ -27,6 +27,8 @@ public interface RecordListener<T extends Record> {
     /**
      * Determine if the listener was registered with this key
      *
+     * 检查监听器是否已经注册到 {@code key} 对应的监听列表中
+     *
      * @param key candidate key
      * @return true if the listener was registered with this key
      */
@@ -35,6 +37,8 @@ public interface RecordListener<T extends Record> {
     /**
      * Determine if the listener is to be removed by matching the 'key'
      *
+     * 检查该监听器是否已经从与 {@code key} 匹配的数据的监听列表移除
+     *
      * @param key key to match
      * @return true if match success
      */
@@ -42,6 +46,8 @@ public interface RecordListener<T extends Record> {
 
     /**
      * Action to do if data of target key has changed
+     *
+     * 监听的数据发生变动的时候执行该方法
      *
      * @param key   target key
      * @param value data of the key
@@ -52,6 +58,7 @@ public interface RecordListener<T extends Record> {
     /**
      * Action to do if data of target key has been removed
      *
+     * 监听的数据被删除时执行该方法
      * @param key target key
      * @throws Exception
      */

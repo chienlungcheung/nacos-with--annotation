@@ -55,6 +55,13 @@ public class RaftStore {
 
     private String cacheDir = UtilsAndCommons.DATA_BASE_DIR + File.separator + "data";
 
+    /**
+     * 从 data 目录下加载全部文件，反序列化为 datum 保存到 {@code datums} map，同时为这些数据增加通知任务到 {@code notifier} 中。
+     *
+     * @param notifier
+     * @param datums
+     * @throws Exception
+     */
     public synchronized void loadDatums(RaftCore.Notifier notifier, ConcurrentMap<String, Datum> datums) throws Exception {
 
         Datum datum;
@@ -64,7 +71,9 @@ public class RaftStore {
                 for (File datumFile : cache.listFiles()) {
                     datum = readDatum(datumFile, cache.getName());
                     if (datum != null) {
+                        // 将数据保存到内存中的 map 中，方面后续查询
                         datums.put(datum.key, datum);
+                        // 这些数据默认都需要在变更时发送通知，通知类型默认是 CHANGE（另一个类型时 DELETE)
                         notifier.addTask(datum.key, ApplyAction.CHANGE);
                     }
                 }
@@ -253,6 +262,11 @@ public class RaftStore {
         }
     }
 
+    /**
+     * 加载 data 目录下文件列表
+     * @return
+     * @throws Exception
+     */
     private File[] listCaches() throws Exception {
         File cacheDir = new File(this.cacheDir);
         if (!cacheDir.exists() && !cacheDir.mkdirs()) {

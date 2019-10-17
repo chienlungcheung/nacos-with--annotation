@@ -117,7 +117,7 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
     }
 
     /**
-     * 更新指定的节点
+     * 更新指定节点的信息
      *
      * @param peer
      * @return
@@ -167,9 +167,17 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return peers.size();
     }
 
+    /**
+     * 计票，若能决出 leader 则将其返回。
+     *
+     * @param candidate
+     * @return
+     */
     public RaftPeer decideLeader(RaftPeer candidate) {
         peers.put(candidate.ip, candidate);
 
+        // 遍历全部节点，开始计票。
+        // maxApprovePeer 记录得票最多的节点，maxApproveCount 记录对应的最高票数。
         SortedBag ips = new TreeBag();
         int maxApproveCount = 0;
         String maxApprovePeer = null;
@@ -185,6 +193,7 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
             }
         }
 
+        // 一旦发现当前最高票达到大多数，则停止机票，选举完成。
         if (maxApproveCount >= majorityCount()) {
             RaftPeer peer = peers.get(maxApprovePeer);
             peer.state = RaftPeer.State.LEADER;
@@ -199,6 +208,12 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return leader;
     }
 
+    /**
+     * 将 candidate 指定为 leader，并使用 candidate 信息更新本地节点保存的 leader 信息。
+     *
+     * @param candidate
+     * @return
+     */
     public RaftPeer makeLeader(RaftPeer candidate) {
         if (!Objects.equals(leader, candidate)) {
             leader = candidate;
@@ -207,6 +222,7 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
                 leader.ip, JSON.toJSONString(local()), JSON.toJSONString(leader));
         }
 
+        // 获取老 leader 的当前信息来更新在本地存储的该节点的信息
         for (final RaftPeer peer : peers.values()) {
             Map<String, String> params = new HashMap<>(1);
             if (!Objects.equals(peer, candidate) && peer.state == RaftPeer.State.LEADER) {
@@ -222,6 +238,7 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
                                 return 1;
                             }
 
+                            // 使用响应来更新本地存储的该节点信息
                             update(JSON.parseObject(response.getResponseBody(), RaftPeer.class));
 
                             return 0;
@@ -279,10 +296,14 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return peers.size() / 2 + 1;
     }
 
+    /**
+     * 重置本地节点保存得集群列表的 leader 和每个节点的 voteFor 字段，为发起选举做准备。
+     */
     public void reset() {
 
         leader = null;
 
+        // 重置投票记录字段
         for (RaftPeer peer : peers.values()) {
             peer.voteFor = null;
         }
@@ -300,17 +321,24 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         return peers.containsKey(remote.ip);
     }
 
+    /**
+     * 如果当前集群节点发生变动，则用最新的集群列表更新 {@code peers}
+     *
+     * @param latestMembers
+     */
     @Override
     public void onChangeServerList(List<Server> latestMembers) {
 
         Map<String, RaftPeer> tmpPeers = new HashMap<>(8);
         for (Server member : latestMembers) {
 
+            // 该节点之前已存在，不做处理
             if (peers.containsKey(member.getKey())) {
                 tmpPeers.put(member.getKey(), peers.get(member.getKey()));
                 continue;
             }
 
+            // 新节点，初始化并加入 peers
             RaftPeer raftPeer = new RaftPeer();
             raftPeer.ip = member.getKey();
 
@@ -322,9 +350,11 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
             tmpPeers.put(member.getKey(), raftPeer);
         }
 
+        // todo peers 不是 volatile 修饰，这里直接替换，不知道是否能否保证可见性
         // replace raft peer set:
         peers = tmpPeers;
 
+        // todo节点的端口号大于 0 就行了（？）
         if (RunningConfig.getServerPort() > 0) {
             ready = true;
         }

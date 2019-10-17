@@ -92,8 +92,14 @@ public class RaftCore {
 
     public static final int PUBLISH_TERM_INCREASE_COUNT = 100;
 
+    /**
+     * raft 集群中每个数据可以对应多个监听器
+     */
     private volatile Map<String, List<RecordListener>> listeners = new ConcurrentHashMap<>();
 
+    /**
+     * 保存 raft 集群全部的数据
+     */
     private volatile ConcurrentMap<String, Datum> datums = new ConcurrentHashMap<>();
 
     @Autowired
@@ -120,16 +126,20 @@ public class RaftCore {
 
         Loggers.RAFT.info("initializing Raft sub-system");
 
+        // 激活通知器，当数据被删除或者更新时会去调用这些数据对应的监听器
         executor.submit(notifier);
 
         long start = System.currentTimeMillis();
 
+        // 加载 data 目录文件内容到内存并设置通知器
         raftStore.loadDatums(notifier, datums);
 
+        // 加载元文件内容，并设置当前 term，如果为空则默认为 0.
         setTerm(NumberUtils.toLong(raftStore.loadMeta().getProperty("term"), 0L));
 
         Loggers.RAFT.info("cache loaded, datum count: {}, current term: {}", datums.size(), peers.getTerm());
 
+        // 等待 notifier 处理完全部通知任务
         while (true) {
             if (notifier.tasks.size() <= 0) {
                 break;
@@ -137,10 +147,12 @@ public class RaftCore {
             Thread.sleep(1000L);
         }
 
+        // 初始化完成
         initialized = true;
 
         Loggers.RAFT.info("finish to load data from disk, cost: {} ms.", (System.currentTimeMillis() - start));
 
+        // 注册选举任务和心跳任务
         GlobalExecutor.registerMasterElection(new MasterElection());
         GlobalExecutor.registerHeartbeat(new HeartBeat());
 
@@ -409,10 +421,12 @@ public class RaftCore {
         public void run() {
             try {
 
+                // 集群节点还未就绪，不进行选举
                 if (!peers.isReady()) {
                     return;
                 }
 
+                // 仅当本地节点的 leaderDueMs 不大于 0 时才参与投票
                 RaftPeer local = peers.local();
                 local.leaderDueMs -= GlobalExecutor.TICK_PERIOD_MS;
 
@@ -420,10 +434,12 @@ public class RaftCore {
                     return;
                 }
 
+                // 重置 leaderDue 和 heartbeatDue
                 // reset timeout
                 local.resetLeaderDue();
                 local.resetHeartbeatDue();
 
+                // 发起选举
                 sendVote();
             } catch (Exception e) {
                 Loggers.RAFT.warn("[RAFT] error while master election {}", e);
@@ -431,6 +447,9 @@ public class RaftCore {
 
         }
 
+        /**
+         * 发起选举
+         */
         public void sendVote() {
 
             RaftPeer local = peers.get(NetUtils.localServer());
@@ -439,10 +458,16 @@ public class RaftCore {
 
             peers.reset();
 
+            // 本地节点发起选举：
+            // - 递增任期
+            // - 投自己一票
+            // - 进入候选人状态
+            // - 向其它全部节点发起 RequestVote RPC
             local.term.incrementAndGet();
             local.voteFor = local.ip;
             local.state = RaftPeer.State.CANDIDATE;
 
+            // 构造选举参数，参数就是发起选举的节点；其它节点收到请求后会调用 receivedVote 方法进行解析。
             Map<String, String> params = new HashMap<>(1);
             params.put("vote", JSON.toJSONString(local));
             for (final String server : peers.allServersWithoutMySelf()) {
@@ -460,6 +485,7 @@ public class RaftCore {
 
                             Loggers.RAFT.info("received approve from peer: {}", JSON.toJSONString(peer));
 
+                            // 收到一票就去检查是否能决出 leader
                             peers.decideLeader(peer);
 
                             return 0;
@@ -472,12 +498,21 @@ public class RaftCore {
         }
     }
 
+    /**
+     * 接收到 {@code remote} 发起选举请求，本地节点判断把票投给谁，返回值即为投票对象。
+     * <p>
+     * 相比 raft 算法定义，这里的处理非常简单，只是校验了 term，并没有考虑 candidate（即这里的 remote 参数）数据是否不比自己更老。
+     *
+     * @param remote
+     * @return
+     */
     public RaftPeer receivedVote(RaftPeer remote) {
         if (!peers.contains(remote)) {
             throw new IllegalStateException("can not find peer: " + remote.ip);
         }
 
         RaftPeer local = peers.get(NetUtils.localServer());
+        // 如果发起选举的节点对应的任期不大于本地节点的任期，则本地节点把票投给自己，而不是投给发起选举的节点。
         if (remote.term.get() <= local.term.get()) {
             String msg = "received illegitimate vote" +
                 ", voter-term:" + remote.term + ", votee-term:" + local.term;
@@ -490,6 +525,11 @@ public class RaftCore {
             return local;
         }
 
+        // 确定投票给发起人，则
+        // - 重置本地节点的选举超时
+        // - 将当前节点状态置为 FOLLOWER
+        // - 记录将票投给了谁
+        // - 将本地任期改为投票对象的任期
         local.resetLeaderDue();
 
         local.state = RaftPeer.State.FOLLOWER;
@@ -510,14 +550,17 @@ public class RaftCore {
                     return;
                 }
 
+                // 仅当本地节点的心跳计时器超时后才发送心跳
                 RaftPeer local = peers.local();
                 local.heartbeatDueMs -= GlobalExecutor.TICK_PERIOD_MS;
                 if (local.heartbeatDueMs > 0) {
                     return;
                 }
 
+                // 重设心跳超时
                 local.resetHeartbeatDue();
 
+                // 发送心跳
                 sendBeat();
             } catch (Exception e) {
                 Loggers.RAFT.warn("[RAFT] error while sending beat {}", e);
@@ -525,8 +568,15 @@ public class RaftCore {
 
         }
 
+        /**
+         * 用于 leader 给集群其它全部节点发送心跳；针对返回响应的节点，leader 会用响应更新对应节点在本地维护的数据。
+         *
+         * @throws IOException
+         * @throws InterruptedException
+         */
         public void sendBeat() throws IOException, InterruptedException {
             RaftPeer local = peers.local();
+            // 如果当前是集群模式，且本地节点不是 leader，则无权发送心跳给其它节点
             if (local.state != RaftPeer.State.LEADER && !STANDALONE_MODE) {
                 return;
             }
@@ -535,23 +585,29 @@ public class RaftCore {
                 Loggers.RAFT.debug("[RAFT] send beat with {} keys.", datums.size());
             }
 
+            // leader 重置自己的选举超时，能发送心跳就没必要发起选举
             local.resetLeaderDue();
 
+            // 发送心跳时要携带的数据
             // build data
             JSONObject packet = new JSONObject();
+            // leader 会把自己的节点数据全部发送给其它节点
             packet.put("peer", local);
 
+            // 保存随心跳一起发送的集群数据
             JSONArray array = new JSONArray();
 
             if (switchDomain.isSendBeatOnly()) {
                 Loggers.RAFT.info("[SEND-BEAT-ONLY] {}", String.valueOf(switchDomain.isSendBeatOnly()));
             }
 
+            // 发心跳时也可以发送数据，可配置
             if (!switchDomain.isSendBeatOnly()) {
                 for (Datum datum : datums.values()) {
 
                     JSONObject element = new JSONObject();
 
+                    // 只在心跳中携带两种类型的集群数据
                     if (KeyBuilder.matchServiceMetaKey(datum.key)) {
                         element.put("key", KeyBuilder.briefServiceMetaKey(datum.key));
                     } else if (KeyBuilder.matchInstanceListKey(datum.key)) {
@@ -583,6 +639,7 @@ public class RaftCore {
                     content.length(), compressedContent.length());
             }
 
+            // 将心跳广播给全部非 leader 节点
             for (final String server : peers.allServersWithoutMySelf()) {
                 try {
                     final String url = buildURL(server, API_BEAT);
@@ -599,6 +656,7 @@ public class RaftCore {
                                 return 1;
                             }
 
+                            // 使用节点返回的心跳数据更新本地的对应的节点数据
                             peers.update(JSON.parseObject(response.getResponseBody(), RaftPeer.class));
                             if (Loggers.RAFT.isDebugEnabled()) {
                                 Loggers.RAFT.debug("receive beat response from: {}", url);
@@ -623,6 +681,7 @@ public class RaftCore {
 
     public RaftPeer receivedBeat(JSONObject beat) throws Exception {
         final RaftPeer local = peers.local();
+        // 解析心跳中包含的发送者节点的信息
         final RaftPeer remote = new RaftPeer();
         remote.ip = beat.getJSONObject("peer").getString("ip");
         remote.state = RaftPeer.State.valueOf(beat.getJSONObject("peer").getString("state"));
@@ -631,12 +690,14 @@ public class RaftCore {
         remote.leaderDueMs = beat.getJSONObject("peer").getLongValue("leaderDueMs");
         remote.voteFor = beat.getJSONObject("peer").getString("voteFor");
 
+        // 如果心跳发送者不是 leader，则报错并终止
         if (remote.state != RaftPeer.State.LEADER) {
             Loggers.RAFT.info("[RAFT] invalid state from master, state: {}, remote peer: {}",
                 remote.state, JSON.toJSONString(remote));
             throw new IllegalArgumentException("invalid state from master, state: " + remote.state);
         }
 
+        // 如果本地节点 term 大于心跳发送者（即 leader）的 term，则报错并终止
         if (local.term.get() > remote.term.get()) {
             Loggers.RAFT.info("[RAFT] out of date beat, beat-from-term: {}, beat-to-term: {}, remote peer: {}, and leaderDueMs: {}"
                 , remote.term.get(), local.term.get(), JSON.toJSONString(remote), local.leaderDueMs);
@@ -644,6 +705,9 @@ public class RaftCore {
                 + ", beat-to-term: " + local.term.get());
         }
 
+        // 如果本地节点不是 follower 状态，则可能是本地节点选举超时定时器超时前未接收到 leader 的心跳，
+        // 本地节点认为 leader 可能挂了，于是要发起选举，此时其状态为 candidate；
+        // 但此处因为又收到心跳了，于是将自己的状态恢复为 follower，同时将 voteFor 改为 leader。
         if (local.state != RaftPeer.State.FOLLOWER) {
 
             Loggers.RAFT.info("[RAFT] make remote as leader, remote peer: {}", JSON.toJSONString(remote));
@@ -652,10 +716,13 @@ public class RaftCore {
             local.voteFor = remote.ip;
         }
 
+        // 处理随 leader 心跳一起到达的集群数据
         final JSONArray beatDatums = beat.getJSONArray("datums");
+        // 本地节点收到了来自 leader 的心跳，于是重置自己的选举超时和心跳超时
         local.resetLeaderDue();
         local.resetHeartbeatDue();
 
+        // 使用 remote 作为本地节点的 leader
         peers.makeLeader(remote);
 
         Map<String, Integer> receivedKeysMap = new HashMap<>(datums.size());
@@ -693,18 +760,22 @@ public class RaftCore {
                 receivedKeysMap.put(datumKey, 1);
 
                 try {
+                    // 如果本地保存有同样的 key 且时间戳更新，则忽略随心跳过来的 key
                     if (datums.containsKey(datumKey) && datums.get(datumKey).timestamp.get() >= timestamp && processedCount < beatDatums.size()) {
                         continue;
                     }
 
+                    // 其它情况下，将该数据加入 batch 中
                     if (!(datums.containsKey(datumKey) && datums.get(datumKey).timestamp.get() >= timestamp)) {
                         batch.add(datumKey);
                     }
 
+                    // 一批数据达到 50 个才进行下面的处理
                     if (batch.size() < 50 && processedCount < beatDatums.size()) {
                         continue;
                     }
 
+                    // 用逗号将 50 个数据键级联起来
                     String keys = StringUtils.join(batch, ",");
 
                     if (batch.size() <= 0) {
@@ -961,11 +1032,20 @@ public class RaftCore {
 
         private BlockingQueue<Pair> tasks = new LinkedBlockingQueue<>(1024 * 1024);
 
+        /**
+         * 如果用户期望在 {@code datumKey} 发生 {@code action} 类型的变更时触发 {@code datumKey} 对应的监听器，则将其
+         * 添加到 Notifier 中。
+         * @param datumKey
+         * @param action
+         */
         public void addTask(String datumKey, ApplyAction action) {
 
+            // 如果已经添加过则不再重复添加
             if (services.containsKey(datumKey) && action == ApplyAction.CHANGE) {
                 return;
             }
+
+            // 为什么 services 只保存 CHANGE 类型的任务？
             if (action == ApplyAction.CHANGE) {
                 services.put(datumKey, StringUtils.EMPTY);
             }
@@ -995,12 +1075,14 @@ public class RaftCore {
                     String datumKey = (String) pair.getValue0();
                     ApplyAction action = (ApplyAction) pair.getValue1();
 
+                    // 从 services 移除，看针对 services 的使用，并没有啥用处
                     services.remove(datumKey);
 
                     Loggers.RAFT.info("remove task {}", datumKey);
 
                     int count = 0;
 
+                    // 先触发元数据类型的监听器（如果 datumKey 包含元数据特定前缀的话）
                     if (listeners.containsKey(KeyBuilder.SERVICE_META_KEY_PREFIX)) {
 
                         if (KeyBuilder.matchServiceMetaKey(datumKey) && !KeyBuilder.matchSwitchKey(datumKey)) {
@@ -1025,6 +1107,7 @@ public class RaftCore {
                         continue;
                     }
 
+                    // 依次调用 datumKey 对应的监听器
                     for (RecordListener listener : listeners.get(datumKey)) {
 
                         count++;

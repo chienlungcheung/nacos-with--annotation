@@ -57,14 +57,14 @@ public class RaftPeer {
     public State state = State.FOLLOWER;
 
     /**
-     * 重置选举超时（见 raft 协议 election-timeout）
+     * 重置选举超时（见 raft 协议 election-timeout），大小为 [15s, 20s)
      */
     public void resetLeaderDue() {
         leaderDueMs = GlobalExecutor.LEADER_TIMEOUT_MS + RandomUtils.nextLong(0, GlobalExecutor.RANDOM_MS);
     }
 
     /**
-     * 重置心跳超时
+     * 重置心跳超时，大小为 5s
      */
     public void resetHeartbeatDue() {
         heartbeatDueMs = GlobalExecutor.HEARTBEAT_INTERVAL_MS;
@@ -94,7 +94,8 @@ public class RaftPeer {
     }
 
     /**
-     * 仅当两个节点的 IP 相同就视为同一个节点
+     * 两个节点的 IP 相同就视为同一个节点
+     *
      * @param obj
      * @return
      */
