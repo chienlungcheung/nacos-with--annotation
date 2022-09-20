@@ -94,6 +94,7 @@ public class NamingProxy {
     public static byte[] getAllData(String server) throws Exception {
 
         Map<String, String> params = new HashMap<>(8);
+        // 地址为 http://[ip]:8848/nacos/v1/ns/distro/datums
         HttpClient.HttpResult result = HttpClient.httpGet("http://" + server + RunningConfig.getContextPath()
             + UtilsAndCommons.NACOS_NAMING_CONTEXT + ALL_DATA_GET_URL, new ArrayList<>(), params);
 

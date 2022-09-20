@@ -18,14 +18,9 @@ package com.alibaba.nacos.naming.consistency.persistent;
 import com.alibaba.nacos.naming.consistency.ConsistencyService;
 
 /**
- * A consistency service that guarantee CP consistency for the published data.
- * <p>
- * CP consistency is hereby defined as follows:
- * <p>
- * Once the writing operation returned client a success, the data within the operation is guaranteed to be
- * successfully written to the cluster. And the data should be consistent between servers after some time
- * without any outside interfere.
- *
+ * 实现该接口的都能保证 CP 级别一致性, 这意味着:
+ * 一旦写操作的响应为成功, 相关数据就被保证成功写入了集群, 而且,
+ * 协议保证数据在各个 server 之间是一致的.
  * @author nkorange
  * @since 1.0.0
  */

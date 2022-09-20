@@ -560,6 +560,7 @@ public class PushService implements ApplicationContextAware, ApplicationListener
             return null;
         }
 
+        // 重推送次数超过上限
         if (ackEntry.getRetryTimes() > MAX_RETRY_TIMES) {
             Loggers.PUSH.warn("max re-push times reached, retry times {}, key: {}", ackEntry.retryTimes, ackEntry.key);
             ackMap.remove(ackEntry.key);
@@ -623,6 +624,7 @@ public class PushService implements ApplicationContextAware, ApplicationListener
                 DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
 
                 try {
+                    // 通过 udp 接收 ack 数据
                     udpSocket.receive(packet);
 
                     String json = new String(packet.getData(), 0, packet.getLength(), Charset.forName("UTF-8")).trim();
@@ -632,6 +634,7 @@ public class PushService implements ApplicationContextAware, ApplicationListener
                     String ip = socketAddress.getAddress().getHostAddress();
                     int port = socketAddress.getPort();
 
+                    // ack 超时
                     if (System.nanoTime() - ackPacket.lastRefTime > ACK_TIMEOUT_NANOS) {
                         Loggers.PUSH.warn("ack takes too long from {} ack json: {}", packet.getSocketAddress(), json);
                     }

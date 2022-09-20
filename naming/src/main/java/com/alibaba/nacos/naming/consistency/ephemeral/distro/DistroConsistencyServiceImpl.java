@@ -43,22 +43,23 @@ import java.util.Map;
 import java.util.concurrent.*;
 
 /**
- * A consistency protocol algorithm called <b>Partition</b>
- * <p>
- * Use a distro algorithm to divide data into many blocks. Each Nacos server node takes
- * responsibility for exactly one block of data. Each block of data is generated, removed
- * and synchronized by its responsible server. So every Nacos server only handles writings
- * for a subset of the total service data.
- * <p>
- * At mean time every Nacos server receives data sync of other Nacos server, so every Nacos
- * server will eventually have a complete set of data.
+ * 该一致性协议实现名叫 Partition.
  *
+ * 该协议实现使用 distro 算法将数据且分为多个块, 每个 Nacos server 节点负责且只负责一块.
+ * 数据每一块的生成, 移除和同步都由它对应的 server 来负责. 也就是说, 每个 Nacos server 只负责
+ * 处理完整数据的一个子集的写入.
+ *
+ * 每个 Nacos server 从其它 Nacos servers 同步数据, 所以最后每个 Nacos server 都将
+ * 拥有一个完整的数据集.
  * @author nkorange
  * @since 1.0.0
  */
 @org.springframework.stereotype.Service("distroConsistencyService")
 public class DistroConsistencyServiceImpl implements EphemeralConsistencyService {
 
+    /**
+     * 用于同步变更到客户端的后台线程
+     */
     private ScheduledExecutorService executor = new ScheduledThreadPoolExecutor(1, new ThreadFactory() {
         @Override
         public Thread newThread(Runnable r) {
@@ -71,9 +72,15 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
         }
     });
 
+    /**
+     * 用于分配
+     */
     @Autowired
     private DistroMapper distroMapper;
 
+    /**
+     * 一致性存储抽象
+     */
     @Autowired
     private DataStore dataStore;
 
@@ -97,18 +104,25 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
 
     private boolean initialized = false;
 
+    /**
+     * 与客户端交互的通知器, 当数据增删时会调用其通知客户端.
+     */
     public volatile Notifier notifier = new Notifier();
 
     private Map<String, CopyOnWriteArrayList<RecordListener>> listeners = new ConcurrentHashMap<>();
 
     private Map<String, String> syncChecksumTasks = new ConcurrentHashMap<>(16);
 
+    /**
+     * 当前节点初始化, 即从其它节点同步数据, 同时启动通知器.
+     */
     @PostConstruct
     public void init() {
         GlobalExecutor.submit(new Runnable() {
             @Override
             public void run() {
                 try {
+                    // 从其它节点同步数据
                     load();
                 } catch (Exception e) {
                     Loggers.DISTRO.error("load data failed.", e);
@@ -116,20 +130,26 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
             }
         });
 
+        // 启动通知器
         executor.submit(notifier);
     }
 
+    /**
+     * 若为集群模式, 等待其它节点上线并同步数据; 否则无须同步数据直接上线.
+     */
     public void load() throws Exception {
+        // standalone 模式无需同步数据
         if (SystemUtils.STANDALONE_MODE) {
             initialized = true;
             return;
         }
-        // size = 1 means only myself in the list, we need at least one another server alive:
+        // 至少两个 server 才能运行集群模式, 如果当前仅一个, 等待另一个上线.
         while (serverListManager.getHealthyServers().size() <= 1) {
             Thread.sleep(1000L);
             Loggers.DISTRO.info("waiting server list init...");
         }
 
+        // 遍历其它节点, 从其同步数据.
         for (Server server : serverListManager.getHealthyServers()) {
             if (NetUtils.localServer().equals(server.getKey())) {
                 continue;
@@ -162,20 +182,29 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
         return dataStore.get(key);
     }
 
+    /**
+     * 响应 Put 操作
+     * @param key
+     * @param value
+     */
     public void onPut(String key, Record value) {
 
         if (KeyBuilder.matchEphemeralInstanceListKey(key)) {
             Datum<Instances> datum = new Datum<>();
             datum.value = (Instances) value;
             datum.key = key;
+            // 推动时钟前进
             datum.timestamp.incrementAndGet();
+            // 放入当前 nacos 节点存储
             dataStore.put(key, datum);
         }
 
+        // 如果没有监听器对该 key 感兴趣则不做通知
         if (!listeners.containsKey(key)) {
             return;
         }
 
+        // 发通知, key 对应数据有变更
         notifier.addTask(key, ApplyAction.CHANGE);
     }
 
@@ -187,6 +216,7 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
             return;
         }
 
+        // 发通知, key 对应数据被删除
         notifier.addTask(key, ApplyAction.DELETE);
     }
 
@@ -257,6 +287,7 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     public boolean syncAllDataFromRemote(Server server) {
 
         try {
+            // 从指定 nacos 节点获取全部 services 以及每个 service 对应的实例列表
             byte[] data = NamingProxy.getAllData(server.getKey());
             processData(data);
             return true;
@@ -268,9 +299,9 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
 
     public void processData(byte[] data) throws Exception {
         if (data.length > 0) {
+            // map 的 key 为 service 名, value 为其对应的 instance 列表
             Map<String, Datum<Instances>> datumMap =
                 serializer.deserializeMap(data, Instances.class);
-
 
             for (Map.Entry<String, Datum<Instances>> entry : datumMap.entrySet()) {
                 dataStore.put(entry.getKey(), entry.getValue());
@@ -361,12 +392,15 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
 
         public void addTask(String datumKey, ApplyAction action) {
 
+            // 上一次变更的通知还没发出去, 本次不再追加.
             if (services.containsKey(datumKey) && action == ApplyAction.CHANGE) {
                 return;
             }
             if (action == ApplyAction.CHANGE) {
+                // 仅将数据变更放入待通知列表, 删除类操作不添加
                 services.put(datumKey, StringUtils.EMPTY);
             }
+            // 不管是变更还是删除都作为一个通知添加到任务列表
             tasks.add(Pair.with(datumKey, action));
         }
 
@@ -390,6 +424,7 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
                     String datumKey = (String) pair.getValue0();
                     ApplyAction action = (ApplyAction) pair.getValue1();
 
+                    // 如果存在, 则从待通知列表中将该变更通知移除
                     services.remove(datumKey);
 
                     int count = 0;
@@ -404,11 +439,13 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
 
                         try {
                             if (action == ApplyAction.CHANGE) {
+                                // 将 key 数据变更通知给客户端
                                 listener.onChange(datumKey, dataStore.get(datumKey).value);
                                 continue;
                             }
 
                             if (action == ApplyAction.DELETE) {
+                                // 将 key 数据移除通知给客户端
                                 listener.onDelete(datumKey);
                                 continue;
                             }

@@ -38,6 +38,14 @@ public class KeyBuilder {
 
     public static final String BRIEF_INSTANCE_LIST_KEY_PREFIX = "iplist.";
 
+    /**
+     * com.alibaba.nacos.naming.iplist.ephemeral.
+     * [namespaceId, 如 d5df85d3-6d86-49f6-b877-cb4431ab1753##
+     * [serviceName 如 adx@@adx-server, 其中 @@ 后面是 group 名]
+     * @param namespaceId
+     * @param serviceName
+     * @return
+     */
     private static String buildEphemeralInstanceListKey(String namespaceId, String serviceName) {
         return INSTANCE_LIST_KEY_PREFIX + EPHEMERAL_KEY_PREFIX + namespaceId + NAMESPACE_KEY_CONNECTOR
             + serviceName;
@@ -90,7 +98,7 @@ public class KeyBuilder {
     }
 
     public static boolean matchEphemeralKey(String key) {
-        // currently only instance list has ephemeral type:
+        // 当前仅服务实例(对应到 IP 粒度)才具备 ephemeral 类型
         return matchEphemeralInstanceListKey(key);
     }
 

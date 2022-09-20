@@ -35,9 +35,7 @@ import com.alibaba.nacos.naming.pojo.Record;
 public interface ConsistencyService {
 
     /**
-     * Put a data related to a key to Nacos cluster
-     * <p>
-     * 将一对 {@code <key, value>} 写入 Nacos 集群
+     * 将一对 <key, value> 写入 Nacos 集群, key 要用户确保全剧唯一.
      *
      * @param key   key of data, this key should be globally unique
      * @param value value of data

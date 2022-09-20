@@ -195,6 +195,11 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
         return (healthyInstanceCount() * 1.0 / allIPs().size()) <= getProtectThreshold();
     }
 
+    /**
+     * 用收到的数据更新所维护的集群对应的实例列表, 并通知到客户端.
+     * @param instances
+     * @param ephemeral
+     */
     public void updateIPs(Collection<Instance> instances, boolean ephemeral) {
         Map<String, List<Instance>> ipMap = new HashMap<>(clusterMap.size());
         for (String clusterName : clusterMap.keySet()) {

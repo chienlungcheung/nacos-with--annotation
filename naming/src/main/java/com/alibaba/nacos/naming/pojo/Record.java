@@ -16,18 +16,16 @@
 package com.alibaba.nacos.naming.pojo;
 
 /**
- * Record to transfer and store in Nacos cluster
  *
- * 用于 Nacos 传输和存储信息
+ * 用于 Nacos 集群内传输和存储信息
  *
  * @author nkorange
  * @since 1.0.0
  */
 public interface Record {
     /**
-     * get the checksum of this record, usually for record comparison
      *
-     * 该校验和通常用于记录比较
+     * 获取记录对应的校验和, 该校验和通常用于记录比较
      *
      * @return checksum of record
      */

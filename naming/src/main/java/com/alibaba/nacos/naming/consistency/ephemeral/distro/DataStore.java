@@ -34,6 +34,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @Component
 public class DataStore {
 
+    /**
+     * 数据保存在内存中
+     */
     private Map<String, Datum> dataMap = new ConcurrentHashMap<>(1024);
 
     public void put(String key, Datum value) {

@@ -18,16 +18,14 @@ package com.alibaba.nacos.naming.consistency.ephemeral;
 import com.alibaba.nacos.naming.consistency.ConsistencyService;
 
 /**
- * A type of consistency for ephemeral data.
- * <p>
- * This kind of consistency is not required to store data on disk or database, because the
- * ephemeral data always keeps a session with server and as long as the session still lives
- * the ephemeral data won't be lost.
- * <p>
- * What is required is that writing should always be successful even if network partition
- * happens. And when the network recovers, data of each partition is merged into one set,
- * so the cluster resumes to a consistent status.
+ * 专用于临时(ephemeral)数据的一致性协议.
  *
+ * 这个协议服务的数据不要求存在磁盘或数据库里, 因为临时数据会与 server
+ * 保持一个 session, 只要 session 还活着, 临时数据就不会丢.
+ *
+ * 该协议要求写操作要总是成功, 即使发生了网络分区, 也就是说这个协议
+ * 是 AP 级别的一致性. 当网络恢复的时候, 数据和每个分区被合并为一个集合,
+ * 所以整个集群达成最终一致.
  * @author nkorange
  * @since 1.0.0
  */

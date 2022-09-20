@@ -115,6 +115,12 @@ public class ServiceController {
         return "ok";
     }
 
+    /**
+     * 查询某个 service 信息, 请求路径形如 curl http://[ip]:8848/nacos/v1/ns/service?serviceName=default
+     * @param request
+     * @return
+     * @throws Exception
+     */
     @RequestMapping(value = "", method = RequestMethod.GET)
     public JSONObject detail(HttpServletRequest request) throws Exception {
 

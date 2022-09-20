@@ -49,7 +49,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.stream.Collectors;
 
 /**
- * Core manager storing all services in Nacos
+ * Nacos 中负责存储和管理全部服务的管理器
  *
  * @author nkorange
  */
@@ -450,9 +450,9 @@ public class ServiceManager implements RecordListener<Service> {
     }
 
     /**
-     * Register an instance to a service in AP mode.
-     * <p>
-     * This method creates service or cluster silently if they don't exist.
+     * 在 AP 模式下, 将一个实例注册到一个服务.
+     *
+     * 如果实例对应的服务或集群不存在, 该方法会顺道创建之.
      *
      * @param namespaceId id of namespace
      * @param serviceName service name
@@ -500,6 +500,7 @@ public class ServiceManager implements RecordListener<Service> {
         Instances instances = new Instances();
         instances.setInstanceList(instanceList);
 
+        // 将数据放入一致性存储
         consistencyService.put(key, instances);
     }
 
