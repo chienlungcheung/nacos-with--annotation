@@ -169,6 +169,13 @@ public class HealthCheckCommon {
         ip.setBeingChecked(false);
     }
 
+    /**
+     * 健康检查发现有服务实例异常, 通知订阅服务发现的客户端.
+     *
+     * @param ip
+     * @param task
+     * @param msg
+     */
     public void checkFail(Instance ip, HealthCheckTask task, String msg) {
         Cluster cluster = task.getCluster();
 

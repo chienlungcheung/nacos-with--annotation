@@ -24,6 +24,16 @@ import com.alibaba.nacos.naming.misc.SwitchDomain;
 import org.apache.commons.lang3.RandomUtils;
 
 /**
+ * 健康检查, 注意这个跟心跳不同, 不是根据有无而是更进一步.
+ *
+ * 比如如果是 http 协议的健康检查
+ * 则会检查 http code 是否为 200 来判断服务实例是否健康.
+ *
+ * 当然不管是心跳检测检查任务还是这里的健康检查任务, \
+ * 如果有变都会调用 PushService::serviceChanged 告诉客户端.
+ *
+ * 不同 nacos 节点负责不同的服务.
+ *
  * @author nacos
  */
 public class HealthCheckTask implements Runnable {
@@ -67,8 +77,9 @@ public class HealthCheckTask implements Runnable {
 
     @Override
     public void run() {
-
+        // 无循环, 整个任务是 one-shot 的, 但是下面会重新调度自己, 实现了循环.
         try {
+            // 每个 nacos 节点负责维护一组服务的实例节点的存活状态, 其它 nacos 节点以之为准.
             if (distroMapper.responsible(cluster.getService().getName()) &&
                 switchDomain.isHealthCheckEnabled(cluster.getService().getName())) {
                 healthCheckProcessor.process(this);
@@ -81,6 +92,7 @@ public class HealthCheckTask implements Runnable {
                 cluster.getService().getName(), cluster.getName(), e);
         } finally {
             if (!cancelled) {
+                // 任务未取消, 重新调度自己.
                 HealthCheckReactor.scheduleCheck(this);
 
                 // worst == 0 means never checked

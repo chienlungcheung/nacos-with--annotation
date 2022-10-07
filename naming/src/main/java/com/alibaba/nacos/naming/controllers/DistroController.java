@@ -95,6 +95,14 @@ public class DistroController {
         return "ok";
     }
 
+    /**
+     * DataSyncer 会自动或者被调用时会发送校验和到这个 api.
+     *
+     * @param request
+     * @param response
+     * @return
+     * @throws Exception
+     */
     @RequestMapping(value = "/checksum", method = RequestMethod.PUT)
     public String syncChecksum(HttpServletRequest request, HttpServletResponse response) throws Exception {
         String source = WebUtils.required(request, "source");

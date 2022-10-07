@@ -110,6 +110,8 @@ public class Cluster extends com.alibaba.nacos.api.naming.pojo.Cluster implement
         }
         checkTask = new HealthCheckTask(this);
 
+        // 触发一个健康检查任务, 该任务是 one-shot 类型,
+        // 但是会再重新调度自己, 构成周期性调度.
         HealthCheckReactor.scheduleCheck(checkTask);
         inited = true;
     }

@@ -32,6 +32,9 @@ import java.util.concurrent.TimeUnit;
 /**
  * Data sync task dispatcher
  *
+ * 当 Distro 维护的数据有变更时(如 Put)需要周知其它 nacos 节点,
+ * 此类被调用, 具体发送由 DataSyncer 实现.
+ *
  * @author nkorange
  * @since 1.0.0
  */
@@ -113,9 +116,12 @@ public class TaskDispatcher {
                     keys.add(key);
                     dataSize++;
 
+                    // 当待同步数据量达到一定量级(1000 个)或者同步间隔超出一定时间(2000 毫秒),
+                    // 则进行数据同步. 这么做可以兼顾吞吐和延迟.
                     if (dataSize == partitionConfig.getBatchSyncKeyCount() ||
                         (System.currentTimeMillis() - lastDispatchTime) > partitionConfig.getTaskDispatchPeriod()) {
 
+                        // 将本地待同步数据发送给每个 nacos 节点
                         for (Server member : dataSyncer.getServers()) {
                             if (NetUtils.localServer().equals(member.getKey())) {
                                 continue;

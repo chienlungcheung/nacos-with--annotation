@@ -84,6 +84,9 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     @Autowired
     private DataStore dataStore;
 
+    /**
+     * 用于在数据变更(如 Put)时同步数据给其它 nacos 节点.
+     */
     @Autowired
     private TaskDispatcher taskDispatcher;
 
@@ -93,6 +96,9 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     @Autowired
     private Serializer serializer;
 
+    /**
+     * 负责维护 nacos 集群节点更新.
+     */
     @Autowired
     private ServerListManager serverListManager;
 
@@ -168,6 +174,8 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
     @Override
     public void put(String key, Record value) throws NacosException {
         onPut(key, value);
+        // 数据有更新, 启动一个数据同步任务, 当前 nacos 节点会
+        // 将本次变更主动同步给其它 nacos 节点.
         taskDispatcher.addTask(key);
     }
 
@@ -220,6 +228,13 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
         notifier.addTask(key, ApplyAction.DELETE);
     }
 
+    /**
+     * 负责接收 /distro/checksum API 接口的请求, 比较收到的校验和
+     * 是否与本地保存一致, 不一致则进行移除或者更新.
+     *
+     * @param checksumMap
+     * @param server
+     */
     public void onReceiveChecksums(Map<String, String> checksumMap, String server) {
 
         if (syncChecksumTasks.containsKey(server)) {
@@ -241,6 +256,11 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
                     // abort the procedure:
                     return;
                 }
+                // 如果当前 nacos 节点:
+                // 1. 不包含校验和中的 key
+                // 2. 或者包含的 value 为空
+                // 3. 或者包含的 value 的校验和与收到的校验和不同
+                // 以上都说明要更新当前 nacos 节点的数据.
                 if (!dataStore.contains(entry.getKey()) ||
                     dataStore.get(entry.getKey()).value == null ||
                     !dataStore.get(entry.getKey()).value.getChecksum().equals(entry.getValue())) {
@@ -248,12 +268,15 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
                 }
             }
 
+            // 检视当前 nacos 节点中由校验和发送方 server 负责的每个 key
             for (String key : dataStore.keys()) {
 
+                // 检查校验和发送方 server 是否负责 key.
                 if (!server.equals(distroMapper.mapSrv(KeyBuilder.getServiceName(key)))) {
                     continue;
                 }
 
+                // 如果负责但是不在刚收到的校验和列表里, 则其过期了, 删除之.
                 if (!checksumMap.containsKey(key)) {
                     toRemoveKeys.add(key);
                 }
@@ -263,6 +286,7 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
                 Loggers.DISTRO.info("to remove keys: {}, to update keys: {}, source: {}", toRemoveKeys, toUpdateKeys, server);
             }
 
+            // 移除过期 keys
             for (String key : toRemoveKeys) {
                 onRemove(key);
             }
@@ -272,6 +296,7 @@ public class DistroConsistencyServiceImpl implements EphemeralConsistencyService
             }
 
             try {
+                // 从校验和发送方拉取要更新的数据.
                 byte[] result = NamingProxy.getData(toUpdateKeys, server);
                 processData(result);
             } catch (Exception e) {

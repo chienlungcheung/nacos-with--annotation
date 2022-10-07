@@ -37,6 +37,11 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Data replicator
  *
+ * 负责两个事情:
+ * 1. 自动地将当前 nacos 节点负责的数据的校验和(keys 和校验和)发送给其它 nacos 节点.
+ * 2. 被外部调用负责将指定数据(keys 和 values)同步给其它 nacos 节点, 注意 keys 不一定是本地
+ * nacos 节点负责.
+ *
  * @author nkorange
  * @since 1.0.0
  */
@@ -44,6 +49,9 @@ import java.util.concurrent.ConcurrentHashMap;
 @DependsOn("serverListManager")
 public class DataSyncer {
 
+    /**
+     * 本地存储
+     */
     @Autowired
     private DataStore dataStore;
 
@@ -59,13 +67,25 @@ public class DataSyncer {
     @Autowired
     private ServerListManager serverListManager;
 
+    /**
+     * 暂存同步任务.
+     */
     private Map<String, String> taskMap = new ConcurrentHashMap<>();
 
+    /**
+     * 启动定时同步.
+     */
     @PostConstruct
     public void init() {
         startTimedSync();
     }
 
+    /**
+     * 供外部调用提交同步任务, keys(不校验是否本地 nacos 节点负责) 和 values 都一起同步.
+     * 该方法默认支持任务重试.
+     * @param task
+     * @param delay
+     */
     public void submit(SyncTask task, long delay) {
 
         // If it's a new task:
@@ -98,12 +118,14 @@ public class DataSyncer {
                         return;
                     }
 
+                    // 本次同步任务要同步的 keys
                     List<String> keys = task.getKeys();
 
                     if (Loggers.DISTRO.isDebugEnabled()) {
                         Loggers.DISTRO.debug("sync keys: {}", keys);
                     }
 
+                    // 取出 keys 对应的 values
                     Map<String, Datum> datumMap = dataStore.batchGet(keys);
 
                     if (datumMap == null || datumMap.isEmpty()) {
@@ -114,10 +136,13 @@ public class DataSyncer {
                         return;
                     }
 
+                    // 将全部要同步的数据序列化
                     byte[] data = serializer.serialize(datumMap);
 
                     long timestamp = System.currentTimeMillis();
+                    // 发送数据给指定 nacos 节点
                     boolean success = NamingProxy.syncData(data, task.getTargetServer());
+                    // 发送失败支持重试.
                     if (!success) {
                         SyncTask syncTask = new SyncTask();
                         syncTask.setKeys(task.getKeys());
@@ -139,6 +164,11 @@ public class DataSyncer {
         }, delay);
     }
 
+    /**
+     * 数据同步失败支持重试直至成功.
+     *
+     * @param syncTask
+     */
     public void retrySync(SyncTask syncTask) {
 
         Server server = new Server();
@@ -157,6 +187,10 @@ public class DataSyncer {
         GlobalExecutor.schedulePartitionDataTimedSync(new TimedSync());
     }
 
+    /**
+     * 定时任务, 负责定期将当前 nacos 节点负责的数据
+     * 的校验和同步给其它 nacos 节点.
+     */
     public class TimedSync implements Runnable {
 
         @Override
@@ -170,6 +204,7 @@ public class DataSyncer {
 
                 // send local timestamps to other servers:
                 Map<String, String> keyChecksums = new HashMap<>(64);
+                // 为当前 nacos 节点负责的数据计算校验和
                 for (String key : dataStore.keys()) {
                     if (!distroMapper.responsible(KeyBuilder.getServiceName(key))) {
                         continue;
@@ -186,6 +221,8 @@ public class DataSyncer {
                     Loggers.DISTRO.debug("sync checksums: {}", keyChecksums);
                 }
 
+                // 将上面计算出来的校验和同步给其它 nacos 节点的 /v1/ns/distro/checksum,
+                // 其它节点发现校验和冲突的时候会主动来拉取数据.
                 for (Server member : getServers()) {
                     if (NetUtils.localServer().equals(member.getKey())) {
                         continue;

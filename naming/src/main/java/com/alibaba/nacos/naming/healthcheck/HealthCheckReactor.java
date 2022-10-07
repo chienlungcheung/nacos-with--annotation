@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.concurrent.*;
 
 /**
+ * 封装了一个线程池, 用于被调度执行健康检查任务.
  * @author nacos
  */
 public class HealthCheckReactor {

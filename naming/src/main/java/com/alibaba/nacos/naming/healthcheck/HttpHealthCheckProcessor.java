@@ -82,6 +82,8 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
         return "HTTP";
     }
 
+    // 检查每个实例存活, 方法是针对对应端口路径发送异步 http 请求;
+    // 响应(即状态更新)由回调函数处理.
     @Override
     public void process(HealthCheckTask task) {
         List<Instance> ips = task.getCluster().allIPs(false);
@@ -130,6 +132,7 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
                     builder.setHeader(entry.getKey(), entry.getValue());
                 }
 
+                // 发送异步请求, 响应由 xxCallback 负责处理.
                 builder.execute(new HttpHealthCheckCallback(ip, task));
                 MetricsMonitor.getHttpHealthCheckMonitor().incrementAndGet();
             } catch (Throwable e) {
@@ -157,10 +160,11 @@ public class HttpHealthCheckProcessor implements HealthCheckProcessor {
 
             int httpCode = response.getStatusCode();
             if (HttpURLConnection.HTTP_OK == httpCode) {
+                // 检查结果为健康
                 healthCheckCommon.checkOK(ip, task, "http:" + httpCode);
                 healthCheckCommon.reEvaluateCheckRT(System.currentTimeMillis() - startTime, task, switchDomain.getHttpHealthParams());
             } else if (HttpURLConnection.HTTP_UNAVAILABLE == httpCode || HttpURLConnection.HTTP_MOVED_TEMP == httpCode) {
-                // server is busy, need verification later
+                // 检查结果为失败, 还会再进行检查.
                 healthCheckCommon.checkFail(ip, task, "http:" + httpCode);
                 healthCheckCommon.reEvaluateCheckRT(task.getCheckRTNormalized() * 2, task, switchDomain.getHttpHealthParams());
             } else {
