@@ -94,7 +94,9 @@ public class NacosNamingService implements NamingService {
         eventDispatcher = new EventDispatcher();
         serverProxy = new NamingProxy(namespace, endpoint, serverList);
         serverProxy.setProperties(properties);
+        // 仅在向 nacos 注册或解除注册服务实例时候调用.
         beatReactor = new BeatReactor(serverProxy, initClientBeatThreadCount(properties));
+        // 用于服务发现, 当服务变更时, nacos 会发送变更信息过来, hostReactor 会触发监听器 eventDispatcher.
         hostReactor = new HostReactor(eventDispatcher, serverProxy, cacheDir, isLoadCacheAtStart(properties), initPollingThreadCount(properties));
     }
 
@@ -186,6 +188,15 @@ public class NacosNamingService implements NamingService {
         registerInstance(serviceName, Constants.DEFAULT_GROUP, instance);
     }
 
+    /**
+     * 调用该方法可以注册服务实例到 nacos 用于服务发现.
+     * 注册时会自动启动一个心跳任务, 定期给 nacos 发送心跳.
+     *
+     * @param serviceName name of service
+     * @param groupName   group of service
+     * @param instance    instance to register
+     * @throws NacosException
+     */
     @Override
     public void registerInstance(String serviceName, String groupName, Instance instance) throws NacosException {
 
@@ -412,6 +423,17 @@ public class NacosNamingService implements NamingService {
         subscribe(serviceName, Constants.DEFAULT_GROUP, clusters, listener);
     }
 
+    /**
+     * 订阅一个服务发现, 当该服务实例有变更时, nacos 节点会发送
+     * 变更信息过来(hostReactor 负责), 收到变更信息后这里
+     * 注册的 EventListener 会被调用.
+     *
+     * @param serviceName name of service
+     * @param groupName   group of service
+     * @param clusters    list of cluster
+     * @param listener    event listener
+     * @throws NacosException
+     */
     @Override
     public void subscribe(String serviceName, String groupName, List<String> clusters, EventListener listener) throws NacosException {
         eventDispatcher.addListener(hostReactor.getServiceInfo(NamingUtils.getGroupedName(serviceName, groupName),

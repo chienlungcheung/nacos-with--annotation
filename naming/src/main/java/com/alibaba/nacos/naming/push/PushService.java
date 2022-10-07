@@ -130,6 +130,12 @@ public class PushService implements ApplicationContextAware, ApplicationListener
         this.applicationContext = applicationContext;
     }
 
+    /**
+     * 某个服务有变化时, 该方法负责通知订阅发现该服务的客户端们.
+     * 具体是通过 udp 发送变更.
+     *
+     * @param event the event to respond to
+     */
     @Override
     public void onApplicationEvent(ServiceChangeEvent event) {
         Service service = event.getService();
@@ -235,6 +241,7 @@ public class PushService implements ApplicationContextAware, ApplicationListener
             clients = clientMap.get(serviceKey);
         }
 
+        // 客户端应该定期发起刷新服务实例列表的请求(通过请求 /v1/ns/instance/list), 以避免自己成为 zombie.
         PushClient oldClient = clients.get(client.toString());
         if (oldClient != null) {
             oldClient.refresh();
@@ -315,6 +322,7 @@ public class PushService implements ApplicationContextAware, ApplicationListener
             return;
         }
 
+        // 这里发布的 ServiceChangeEvent 会被 PushService::onApplicationEvent 收到.
         this.applicationContext.publishEvent(new ServiceChangeEvent(this, service));
     }
 

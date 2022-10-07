@@ -105,6 +105,11 @@ public class EventDispatcher {
         changedServices.add(serviceInfo);
     }
 
+    /**
+     * 当有服务变更消息发送过来时, 外层 eventDispatcher 会追加
+     * 消息到 Notifier 的消息队列, 后者轮询该队列处理消息通知
+     * 对应的 EventListener.
+     */
     private class Notifier implements Runnable {
         @Override
         public void run() {

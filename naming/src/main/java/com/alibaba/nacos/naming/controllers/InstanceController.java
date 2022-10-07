@@ -90,6 +90,12 @@ public class InstanceController {
         }
     };
 
+    /**
+     * 注册一个实例到指定服务.
+     * @param request
+     * @return
+     * @throws Exception
+     */
     @CanDistro
     @RequestMapping(value = "", method = RequestMethod.POST)
     public String register(HttpServletRequest request) throws Exception {
@@ -97,6 +103,7 @@ public class InstanceController {
         String serviceName = WebUtils.required(request, CommonParams.SERVICE_NAME);
         String namespaceId = WebUtils.optional(request, CommonParams.NAMESPACE_ID, Constants.DEFAULT_NAMESPACE_ID);
 
+        // 将实例加入服务, 将相关数据保存到存储, 将变更同步给其它 nacos 节点.
         serviceManager.registerInstance(namespaceId, serviceName, parseInstance(request));
         return "ok";
     }
@@ -142,6 +149,15 @@ public class InstanceController {
         return "ok";
     }
 
+    /**
+     * 查询指定服务对应的实例列表, 如果是服务发现的客户端则
+     * 会将自己的 ip 连同通信端口通过参数带上来, 以待服务有变更
+     * 时相关 nacos 节点会将变更主动推送给自己.
+     *
+     * @param request
+     * @return
+     * @throws Exception
+     */
     @RequestMapping(value = "/list", method = RequestMethod.GET)
     public JSONObject list(HttpServletRequest request) throws Exception {
 
@@ -210,6 +226,13 @@ public class InstanceController {
         throw new NacosException(NacosException.NOT_FOUND, "no matched ip found!");
     }
 
+    /**
+     * 该接口接收客户端(即服务实例)主动发送的心跳请求.
+     *
+     * @param request
+     * @return
+     * @throws Exception
+     */
     @CanDistro
     @RequestMapping(value = "/beat", method = RequestMethod.PUT)
     public JSONObject beat(HttpServletRequest request) throws Exception {
@@ -221,6 +244,7 @@ public class InstanceController {
         String namespaceId = WebUtils.optional(request, CommonParams.NAMESPACE_ID,
             Constants.DEFAULT_NAMESPACE_ID);
         String beat = WebUtils.required(request, "beat");
+        // RsInfo 包含了客户端侧诸多信息, 如 IP 端口等等.
         RsInfo clientBeat = JSON.parseObject(beat, RsInfo.class);
 
         if (!switchDomain.isDefaultInstanceEphemeral() && !clientBeat.isEphemeral()) {
@@ -238,9 +262,14 @@ public class InstanceController {
             Loggers.SRV_LOG.debug("[CLIENT-BEAT] full arguments: beat: {}, serviceName: {}", clientBeat, serviceName);
         }
 
+        // 取出客户端对应的服务实例
         Instance instance = serviceManager.getInstance(namespaceId, serviceName, clientBeat.getCluster(), clientBeat.getIp(),
             clientBeat.getPort());
 
+        // 如果 nacos 并未保存有该实例, 则说明该客户端为一个新的实例,
+        // 这种情况要么是老服务新生成了实例, 要么是用户创建了新服务;
+        // 为其生成对应的服务实例并进行注册, 注册行为会触发 nacos 集群
+        // 数据同步.
         if (instance == null) {
             instance = new Instance();
             instance.setPort(clientBeat.getPort());
@@ -261,6 +290,7 @@ public class InstanceController {
             throw new NacosException(NacosException.SERVER_ERROR, "service not found: " + serviceName + "@" + namespaceId);
         }
 
+        // 处理客户端的心跳. 注意心跳处理没有 nacos 节点各自负责一组一说, 客户端发送的时候会随机发.
         service.processClientBeat(clientBeat);
         result.put("clientBeatInterval", instance.getInstanceHeartBeatInterval());
         return result;
@@ -388,6 +418,7 @@ public class InstanceController {
         // now try to enable the push
         try {
             if (udpPort > 0 && pushService.canEnablePush(agent)) {
+                // 将该客户端添加到推送服务的客户端列表, 待服务有变更时会主动通知之.
                 pushService.addClient(namespaceId, serviceName,
                     clusters,
                     agent,

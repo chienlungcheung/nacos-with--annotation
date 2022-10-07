@@ -284,6 +284,16 @@ public class NamingProxy {
         reqAPI(UtilAndComs.NACOS_URL_SERVICE, params, HttpMethod.PUT);
     }
 
+    /**
+     * 该查询为同步网络请求.
+     *
+     * @param serviceName
+     * @param clusters
+     * @param udpPort
+     * @param healthyOnly
+     * @return
+     * @throws NacosException
+     */
     public String queryList(String serviceName, String clusters, int udpPort, boolean healthyOnly)
         throws NacosException {
 
@@ -391,6 +401,16 @@ public class NamingProxy {
         return callServer(api, params, curServer, HttpMethod.GET);
     }
 
+    /**
+     * 该方法通过同步请求方式请求 nacos 节点进行交互.
+     *
+     * @param api
+     * @param params
+     * @param curServer
+     * @param method
+     * @return
+     * @throws NacosException
+     */
     public String callServer(String api, Map<String, String> params, String curServer, String method)
         throws NacosException {
         long start = System.currentTimeMillis();
@@ -447,6 +467,9 @@ public class NamingProxy {
             int index = random.nextInt(servers.size());
 
             for (int i = 0; i < servers.size(); i++) {
+                // 这里用随机数 index 而不是用 i, 是因为该请求
+                // 正常情况下只发送一次, 为了避免逮着一个 nacos 节点
+                // 发, 这里用随机做了 load balancing.
                 String server = servers.get(index);
                 try {
                     return callServer(api, params, server, method);
@@ -559,6 +582,6 @@ public class NamingProxy {
             this.serverPort = Integer.parseInt(sp);
         }
     }
-    
+
 }
 

@@ -300,6 +300,10 @@ public class HostReactor {
         }
     }
 
+    /**
+     * 周期性请求 /v1/ns/instance/list 接口刷新订阅的
+     * 服务发现对应的服务实例列表.
+     */
     public class UpdateTask implements Runnable {
         long lastRefTime = Long.MAX_VALUE;
         private String clusters;

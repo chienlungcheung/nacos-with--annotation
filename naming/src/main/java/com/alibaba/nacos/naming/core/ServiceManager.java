@@ -544,8 +544,20 @@ public class ServiceManager implements RecordListener<Service> {
         return null;
     }
 
+    /**
+     * 当服务对应的实例列表有增或删变动时调用该方法,
+     * 效果是从本地存储增加或者移除对应的实例.
+     *
+     * @param service
+     * @param action
+     * @param ephemeral
+     * @param ips
+     * @return
+     * @throws NacosException
+     */
     public List<Instance> updateIpAddresses(Service service, String action, boolean ephemeral, Instance... ips) throws NacosException {
 
+        // 取出已有的实例列表
         Datum datum = consistencyService.get(KeyBuilder.buildInstanceListKey(service.getNamespaceId(), service.getName(), ephemeral));
 
         Map<String, Instance> oldInstanceMap = new HashMap<>(16);
