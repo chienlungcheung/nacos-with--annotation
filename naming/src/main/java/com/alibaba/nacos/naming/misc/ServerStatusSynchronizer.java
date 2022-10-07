@@ -25,7 +25,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Report local server status to other server
+ * 负责将当前 nacos 节点状态汇报给其它 nacos 节点.
  *
  * @author nacos
  */

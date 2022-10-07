@@ -354,7 +354,7 @@ public class RaftPeerSet implements ServerChangeListener, ApplicationContextAwar
         // replace raft peer set:
         peers = tmpPeers;
 
-        // todo节点的端口号大于 0 就行了（？）
+        // todo 节点的端口号大于 0 就行了（？）
         if (RunningConfig.getServerPort() > 0) {
             ready = true;
         }

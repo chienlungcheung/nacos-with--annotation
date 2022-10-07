@@ -125,7 +125,7 @@ public class DistroMapper implements ServerChangeListener {
     }
 
     /**
-     * 用新集群列表替换老的集群列表.
+     * 感知集群全量节点中到底哪些是健康的.
      *
      * @param latestReachableMembers reachable servers after change
      */
