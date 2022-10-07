@@ -65,7 +65,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
     private String namespaceId;
 
     /**
-     * IP will be deleted if it has not send beat for some time, default timeout is 30 seconds.
+     * IP will be deleted if it has not sent beat for some time, default timeout is 30 seconds.
      */
     private long ipDeleteTimeout = 30 * 1000;
 
@@ -258,6 +258,7 @@ public class Service extends com.alibaba.nacos.api.naming.pojo.Service implement
 
     public void init() {
 
+        // 周期性(每隔五秒)调度一次任务检测是否有服务实例发送心跳超时或者挂了.
         HealthCheckReactor.scheduleCheck(clientBeatCheckTask);
 
         for (Map.Entry<String, Cluster> entry : clusterMap.entrySet()) {

@@ -33,8 +33,9 @@ import java.util.List;
 
 
 /**
- * Check and update statues of ephemeral instances, remove them if they have been expired.
- *
+ * 基于每个服务实例上次心跳时间戳, 判断实例是否超时或者挂了,
+ * 不管是超时还是挂了都会发送消息给订阅发现该服务的客户端, 如果
+ * 挂了则会将实例从列表删除并在 nacos 集群之间同步最新的实例列表.
  * @author nkorange
  */
 public class ClientBeatCheckTask implements Runnable {
@@ -67,6 +68,7 @@ public class ClientBeatCheckTask implements Runnable {
     @Override
     public void run() {
         try {
+            // 只针对当前 nacos 节点负责的服务的实例进行心跳检测.
             if (!getDistroMapper().responsible(service.getName())) {
                 return;
             }
@@ -75,6 +77,8 @@ public class ClientBeatCheckTask implements Runnable {
 
             // first set health status of instances:
             for (Instance instance : instances) {
+                // 如果服务实力上次发送心跳至今已经超过了超时限制(15 秒), 则认为该服务实例不活跃了.
+                // 这次检测还不至于将其从列表驱逐, 下面的那个超时才会.
                 if (System.currentTimeMillis() - instance.getLastBeat() > instance.getInstanceHeartBeatTimeOut()) {
                     if (!instance.isMarked()) {
                         if (instance.isHealthy()) {
@@ -82,6 +86,8 @@ public class ClientBeatCheckTask implements Runnable {
                             Loggers.EVT_LOG.info("{POS} {IP-DISABLED} valid: {}:{}@{}@{}, region: {}, msg: client timeout after {}, last beat: {}",
                                 instance.getIp(), instance.getPort(), instance.getClusterName(), service.getName(),
                                 UtilsAndCommons.LOCALHOST_SITE, instance.getInstanceHeartBeatTimeOut(), instance.getLastBeat());
+                            // 通知服务发现的订阅者, 有服务实例出问题了.
+                            // 这个消息会通过 PushService push 给订阅者.
                             getPushService().serviceChanged(service);
                             SpringContext.getAppContext().publishEvent(new InstanceHeartbeatTimeoutEvent(this, instance));
                         }
@@ -93,7 +99,8 @@ public class ClientBeatCheckTask implements Runnable {
                 return;
             }
 
-            // then remove obsolete instances:
+            // 如果有服务实例上次发送心跳距今已经超过超时限制(30 秒)未发送心跳,
+            // 则认为其挂掉了, 从列表删除.
             for (Instance instance : instances) {
 
                 if (instance.isMarked()) {

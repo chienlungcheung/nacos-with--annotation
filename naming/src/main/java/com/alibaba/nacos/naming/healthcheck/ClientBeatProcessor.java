@@ -29,7 +29,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Thread to update ephemeral instance triggered by client beat
+ * 处理客户端(某个服务实例)主动发来的心跳请求, 客户端为 ephemeral.
  *
  * @author nkorange
  */
@@ -77,12 +77,15 @@ public class ClientBeatProcessor implements Runnable {
                 if (Loggers.EVT_LOG.isDebugEnabled()) {
                     Loggers.EVT_LOG.debug("[CLIENT-BEAT] refresh beat: {}", rsInfo.toString());
                 }
+                // 这是唯一干的正事, 刷新该客户端对应的服务实例中保存的最后一次心跳时间戳.
                 instance.setLastBeat(System.currentTimeMillis());
                 if (!instance.isMarked()) {
+                    // 如果之前不健康, 则现在收到心跳说明其又活跃了.
                     if (!instance.isHealthy()) {
                         instance.setHealthy(true);
                         Loggers.EVT_LOG.info("service: {} {POS} {IP-ENABLED} valid: {}:{}@{}, region: {}, msg: client beat ok",
                             cluster.getService().getName(), ip, port, cluster.getName(), UtilsAndCommons.LOCALHOST_SITE);
+                        // 有节点重新活跃, 需要通知订阅对应服务的监听器.
                         getPushService().serviceChanged(service);
                     }
                 }

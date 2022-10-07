@@ -201,6 +201,7 @@ public class NacosNamingService implements NamingService {
             long instanceInterval = instance.getInstanceHeartBeatInterval();
             beatInfo.setPeriod(instanceInterval == 0 ? DEFAULT_HEART_BEAT_INTERVAL : instanceInterval);
 
+            // 注册实例的时候会顺便启动一个心跳任务, 该任务定期发送心跳给 nacos 节点.
             beatReactor.addBeatInfo(NamingUtils.getGroupedName(serviceName, groupName), beatInfo);
         }
 
