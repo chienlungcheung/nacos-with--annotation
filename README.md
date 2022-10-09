@@ -8,4 +8,4 @@
 
 -------
 
-本项目为对 nacos 的注释, 系列博客见 [二手知识](chienlungcheung.github.io)
+本项目为对 nacos 的注释, 系列博客见 [二手知识](https://chienlungcheung.github.io).
